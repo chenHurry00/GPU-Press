@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU-Press · 显卡压力测试</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0b0e14;
+            --panel: #141821;
+            --panel-2: #1b2030;
+            --border: #2a3142;
+            --text: #e6e9ef;
+            --muted: #8b93a7;
+            --accent: #ff8c1a;
+            --accent-2: #ffd000;
+            --danger: #ff4757;
+            --ok: #2ed573;
+            --warn: #ffa502;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0; padding: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            min-height: 100vh;
+        }
+        header {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 14px;
+        }
+        header .logo {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg,
+                #ff4757, #ff8c1a, #ffd000, #2ed573, #1e90ff, #6c5ce7, #ff4757);
+            box-shadow: 0 0 18px rgba(255,140,26,.5);
+        }
+        header h1 {
+            font-size: 18px; margin: 0; font-weight: 600;
+            letter-spacing: .5px;
+        }
+        header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+        .layout {
+            max-width: 1280px; margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+        }
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+        }
+        .card h2 {
+            margin: 0 0 14px; font-size: 13px; font-weight: 600;
+            color: var(--muted); text-transform: uppercase; letter-spacing: .8px;
+        }
+        /* 控制面板 */
+        .ctrl-row { margin-bottom: 14px; }
+        .ctrl-row label {
+            display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px;
+        }
+        .ctrl-row .row { display: flex; gap: 10px; align-items: center; }
+        input[type="number"], select {
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 14px;
+            width: 100%;
+        }
+        .gpu-selector {
+            display: grid; gap: 7px;
+            padding: 9px 10px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .gpu-option {
+            display: flex !important; align-items: center; gap: 8px;
+            margin: 0 !important; color: var(--text) !important;
+            cursor: pointer;
+        }
+        .gpu-option input { accent-color: var(--accent); }
+        .gpu-option input:disabled { cursor: not-allowed; }
+        .btn {
+            border: none; cursor: pointer;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 14px; font-weight: 600;
+            transition: all .15s;
+            width: 100%;
+        }
+        .btn-start {
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            color: #1a1208;
+        }
+        .btn-start:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn-stop {
+            background: var(--danger);
+            color: #fff;
+        }
+        .btn-stop:hover { filter: brightness(1.1); }
+        .btn:disabled { opacity: .4; cursor: not-allowed; }
+        .btn-group { display: flex; gap: 10px; margin-top: 6px; }
+
+        /* 状态指示 */
+        .status-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 999px;
+            font-size: 12px; font-weight: 600;
+        }
+        .status-pill .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+        }
+        .status-idle { background: rgba(139,147,167,.15); color: var(--muted); }
+        .status-idle .dot { background: var(--muted); }
+        .status-run { background: rgba(46,213,115,.15); color: var(--ok); }
+        .status-run .dot { background: var(--ok); animation: pulse 1s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+        /* 指标格子 */
+        .gpu-dashboard { margin-bottom: 20px; }
+        .gpu-dashboard:last-child { margin-bottom: 0; }
+        .gpu-dashboard-title {
+            display: flex; align-items: baseline; justify-content: space-between;
+            gap: 12px; margin: 0 0 10px;
+        }
+        .gpu-dashboard-title h2 { margin: 0; font-size: 15px; }
+        .gpu-dashboard-title span { color: var(--muted); font-size: 12px; }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .metric {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+        }
+        .metric .name { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+        .metric .val { font-size: 26px; font-weight: 700; margin-top: 4px; }
+        .metric .unit { font-size: 13px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+        .metric.temp .val { color: var(--accent); }
+        .metric.power .val { color: var(--accent-2); }
+        .metric.util .val { color: var(--ok); }
+        .metric.mem .val { color: #5ea8ff; }
+        .metric .bar {
+            margin-top: 8px; height: 4px; background: var(--panel-2);
+            border-radius: 2px; overflow: hidden;
+        }
+        .metric .bar > div { height: 100%; transition: width .3s; }
+
+        /* 图表 */
+        .chart-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px;
+        }
+        .chart-card .head {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .chart-card .head h2 { margin: 0; font-size: 14px; }
+        .chart-card .head .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+        .chart-card .head .legend span::before {
+            content: ''; display: inline-block; width: 10px; height: 10px;
+            border-radius: 2px; margin-right: 5px; vertical-align: middle;
+        }
+        .leg-temp::before { background: var(--accent) !important; }
+        .leg-power::before { background: var(--accent-2) !important; }
+        .leg-util::before { background: var(--ok) !important; }
+        .chart-wrap { position: relative; height: 280px; }
+        .empty-state {
+            padding: 48px 20px; text-align: center; color: var(--muted);
+            border: 1px dashed var(--border); border-radius: 12px;
+        }
+
+        /* 紧急停止浮动条 */
+        .emergency {
+            margin-top: 14px;
+            padding: 10px 12px;
+            background: rgba(255,71,87,.08);
+            border: 1px dashed var(--danger);
+            border-radius: 8px;
+            font-size: 12px; color: #ffb3ba;
+        }
+        .warn { color: var(--warn); }
+        @media (max-width: 760px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo"></div>
+    <div>
+        <h1>GPU-Press</h1>
+        <div class="sub">NVIDIA 显卡稳定性压力测试 · 温度曲线实时监控</div>
+    </div>
+    <div style="margin-left:auto;">
+        <span id="statusPill" class="status-pill status-idle"><span class="dot"></span><span id="statusText">空闲</span></span>
+    </div>
+</header>
+
+<div class="layout">
+    <!-- 左：控制面板 -->
+    <div>
+        <div class="card">
+            <h2>测试控制</h2>
+            <div class="ctrl-row">
+                <label>测试显卡（可多选）</label>
+                <div id="gpuSelector" class="gpu-selector">
+                    <span style="font-size:12px; color:var(--muted);">正在检测 GPU…</span>
+                </div>
+            </div>
+            <div class="ctrl-row">
+                <label>运行时长（秒，0=持续到手动停止）</label>
+                <input type="number" id="seconds" value="60" min="0" max="3600" step="10">
+            </div>
+            <div class="ctrl-row">
+                <label>负载强度</label>
+                <select id="intensity">
+                    <option value="1">1 · 轻度（热身）</option>
+                    <option value="2" selected>2 · 中度（默认）</option>
+                    <option value="3">3 · 重度</option>
+                    <option value="4">4 · 极限（最高温度）</option>
+                </select>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-start" id="btnStart">▶ 启动压测</button>
+                <button class="btn btn-stop" id="btnStop" disabled>■ 停止</button>
+            </div>
+            <div id="warnBox" class="emergency" style="display:none;"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+            <h2>系统信息</h2>
+            <div style="font-size:12px; color:var(--muted); line-height:1.8;">
+                <div>设备：<span id="gpuSummary" style="color:var(--text)">检测中…</span></div>
+                <div>驱动：<span id="driverInfo" style="color:var(--text)">检测中…</span></div>
+                <div>内核：<span id="binReady" style="color:var(--warn)">检测中…</span></div>
+                <div>采样：<span style="color:var(--text)">1 Hz · nvidia-smi</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右：每张 GPU 的指标 + 曲线 -->
+    <div id="gpuDashboards">
+        <div class="empty-state">正在等待 GPU 采样数据…</div>
+    </div>
+</div>
+
+<script>
+const MAX_POINTS = 600;       // 10 分钟 @1Hz
+const dashboards = new Map();
+const latestByGpu = new Map();
+let selectorSignature = "";
+let historyLoaded = false;
+let processError = null;
+
+function createChart(canvas) {
+    if (typeof Chart === "undefined") return null;
+    return new Chart(canvas.getContext("2d"), {
+        type: "line",
+        data: {
+            labels: [],
+            datasets: [
+                { label: "温度 (°C)", data: [], borderColor: "#ff8c1a",
+                  backgroundColor: "rgba(255,140,26,.12)", fill: true,
+                  borderWidth: 2, tension: .3, pointRadius: 0, yAxisID: "y" },
+                { label: "功耗 (W)", data: [], borderColor: "#ffd000",
+                  backgroundColor: "transparent", borderWidth: 1.5,
+                  tension: .3, pointRadius: 0, yAxisID: "y1" },
+                { label: "利用率 (%)", data: [], borderColor: "#2ed573",
+                  backgroundColor: "transparent", borderWidth: 1.5,
+                  tension: .3, pointRadius: 0, yAxisID: "y1" }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: "#1b2030", titleColor: "#e6e9ef",
+                    bodyColor: "#e6e9ef", borderColor: "#2a3142", borderWidth: 1
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: "rgba(255,255,255,.04)" },
+                    ticks: { color: "#8b93a7", maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }
+                },
+                y: {
+                    position: "left",
+                    title: { display: true, text: "温度 °C", color: "#ff8c1a" },
+                    grid: { color: "rgba(255,255,255,.04)" },
+                    ticks: { color: "#ff8c1a" },
+                    suggestedMin: 25, suggestedMax: 90
+                },
+                y1: {
+                    position: "right",
+                    title: { display: true, text: "功耗 W / 利用率 %", color: "#ffd000" },
+                    grid: { drawOnChartArea: false },
+                    ticks: { color: "#ffd000" },
+                    suggestedMin: 0, suggestedMax: 100
+                }
+            }
+        }
+    });
+}
+
+function ensureDashboard(gpu) {
+    const index = gpu.gpu_index;
+    if (dashboards.has(index)) {
+        const dashboard = dashboards.get(index);
+        dashboard.title.textContent = `GPU ${index} · ${gpu.gpu_name}`;
+        dashboard.meta.textContent = `${(gpu.mem_total / 1024).toFixed(0)} GB · 驱动 ${gpu.driver}`;
+        return dashboard;
+    }
+
+    const root = document.getElementById("gpuDashboards");
+    const empty = root.querySelector(".empty-state");
+    if (empty) empty.remove();
+
+    const section = document.createElement("section");
+    section.className = "gpu-dashboard";
+    section.innerHTML = `
+        <div class="gpu-dashboard-title"><h2></h2><span></span></div>
+        <div class="metrics">
+            <div class="metric temp"><div class="name">温度</div><div class="val"><b>--</b><span class="unit">°C</span></div><div class="bar"><div style="width:0%; background:var(--accent);"></div></div></div>
+            <div class="metric power"><div class="name">功耗</div><div class="val"><b>--</b><span class="unit">W</span></div><div class="bar"><div style="width:0%; background:var(--accent-2);"></div></div></div>
+            <div class="metric util"><div class="name">GPU 利用率</div><div class="val"><b>--</b><span class="unit">%</span></div><div class="bar"><div style="width:0%; background:var(--ok);"></div></div></div>
+            <div class="metric mem"><div class="name">显存</div><div class="val"><b>--</b><span class="unit">MB</span></div><div class="bar"><div style="width:0%; background:#5ea8ff;"></div></div></div>
+        </div>
+        <div class="chart-card">
+            <div class="head"><h2>实时状态曲线</h2><div class="legend"><span class="leg-temp">温度</span><span class="leg-power">功耗</span><span class="leg-util">利用率</span></div></div>
+            <div class="chart-wrap"><canvas></canvas></div>
+        </div>`;
+    root.appendChild(section);
+
+    const dashboard = {
+        section,
+        title: section.querySelector(".gpu-dashboard-title h2"),
+        meta: section.querySelector(".gpu-dashboard-title span"),
+        temp: section.querySelector(".metric.temp b"),
+        power: section.querySelector(".metric.power b"),
+        util: section.querySelector(".metric.util b"),
+        mem: section.querySelector(".metric.mem b"),
+        tempBar: section.querySelector(".metric.temp .bar div"),
+        powerBar: section.querySelector(".metric.power .bar div"),
+        utilBar: section.querySelector(".metric.util .bar div"),
+        memBar: section.querySelector(".metric.mem .bar div"),
+        chart: createChart(section.querySelector("canvas")),
+        lastTime: null
+    };
+    dashboards.set(index, dashboard);
+    dashboard.title.textContent = `GPU ${index} · ${gpu.gpu_name}`;
+    dashboard.meta.textContent = `${(gpu.mem_total / 1024).toFixed(0)} GB · 驱动 ${gpu.driver}`;
+    if (!dashboard.chart) {
+        section.querySelector(".chart-wrap").textContent = "Chart.js 未加载，指标采样仍正常。";
+    }
+    return dashboard;
+}
+
+function pushSample(sample) {
+    const dashboard = ensureDashboard(sample);
+    if (dashboard.lastTime === sample.time) return;
+    dashboard.lastTime = sample.time;
+    latestByGpu.set(sample.gpu_index, sample);
+
+    if (dashboard.chart) {
+        dashboard.chart.data.labels.push(sample.clock);
+        dashboard.chart.data.datasets[0].data.push(sample.temp);
+        dashboard.chart.data.datasets[1].data.push(sample.power);
+        dashboard.chart.data.datasets[2].data.push(sample.util);
+        if (dashboard.chart.data.labels.length > MAX_POINTS) {
+            dashboard.chart.data.labels.shift();
+            dashboard.chart.data.datasets.forEach(dataset => dataset.data.shift());
+        }
+        dashboard.chart.update("none");
+    }
+
+    dashboard.temp.textContent = sample.temp.toFixed(0);
+    dashboard.power.textContent = sample.power.toFixed(0);
+    dashboard.util.textContent = sample.util.toFixed(0);
+    dashboard.mem.textContent = sample.mem_used.toFixed(0);
+    dashboard.tempBar.style.width = Math.min(100, sample.temp / 95 * 100) + "%";
+    dashboard.powerBar.style.width = Math.min(100, sample.power / sample.power_limit * 100) + "%";
+    dashboard.utilBar.style.width = Math.min(100, sample.util) + "%";
+    dashboard.memBar.style.width = Math.min(100, sample.mem_used / sample.mem_total * 100) + "%";
+}
+
+function pushBatch(batch) {
+    if (!Array.isArray(batch)) return;
+    batch.forEach(pushSample);
+    updateWarning();
+}
+
+function updateWarning() {
+    const warn = document.getElementById("warnBox");
+    if (processError) {
+        warn.style.display = "block";
+        warn.textContent = "压测进程异常：" + processError;
+        return;
+    }
+    const hottest = [...latestByGpu.values()].sort((a, b) => b.temp - a.temp)[0];
+    if (hottest && hottest.temp >= 85) {
+        warn.style.display = "block";
+        warn.textContent = `⚠️ 高温警告：GPU ${hottest.gpu_index} 当前 ${hottest.temp.toFixed(0)}°C ≥ 85°C，建议停止测试或降低负载强度。`;
+    } else if (hottest && hottest.temp >= 75) {
+        warn.style.display = "block";
+        warn.textContent = `GPU ${hottest.gpu_index} 温度偏高（${hottest.temp.toFixed(0)}°C），请根据 ${hottest.gpu_name} 的厂商规格判断是否继续。`;
+    } else {
+        warn.style.display = "none";
+    }
+}
+
+function renderInventory(gpus, running, activeIndices) {
+    const signature = JSON.stringify(gpus.map(gpu => [gpu.index, gpu.uuid, gpu.name]));
+    const selector = document.getElementById("gpuSelector");
+    const active = new Set(activeIndices || []);
+
+    if (signature !== selectorSignature) {
+        const previous = new Set([...selector.querySelectorAll("input:checked")].map(input => +input.value));
+        const usePrevious = selectorSignature !== "" && previous.size > 0;
+        selector.replaceChildren();
+        for (const gpu of gpus) {
+            const label = document.createElement("label");
+            label.className = "gpu-option";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.value = gpu.index;
+            checkbox.checked = running ? active.has(gpu.index) : (usePrevious ? previous.has(gpu.index) : true);
+            const text = document.createElement("span");
+            text.textContent = `GPU ${gpu.index} · ${gpu.name} · ${(gpu.memory_total / 1024).toFixed(0)} GB`;
+            label.append(checkbox, text);
+            selector.appendChild(label);
+        }
+        if (!gpus.length) {
+            const text = document.createElement("span");
+            text.style.cssText = "font-size:12px; color:var(--muted);";
+            text.textContent = "未检测到 GPU";
+            selector.appendChild(text);
+        }
+        selectorSignature = signature;
+    }
+
+    const checkboxes = selector.querySelectorAll("input[type=checkbox]");
+    if (running && active.size) {
+        checkboxes.forEach(checkbox => { checkbox.checked = active.has(+checkbox.value); });
+    }
+    checkboxes.forEach(checkbox => { checkbox.disabled = running; });
+
+    const known = new Set(gpus.map(gpu => gpu.index));
+    for (const [index, dashboard] of dashboards) {
+        if (!known.has(index)) {
+            if (dashboard.chart) dashboard.chart.destroy();
+            dashboard.section.remove();
+            dashboards.delete(index);
+            latestByGpu.delete(index);
+        }
+    }
+    for (const gpu of gpus) {
+        ensureDashboard({
+            gpu_index: gpu.index, gpu_name: gpu.name, mem_total: gpu.memory_total,
+            driver: gpu.driver
+        });
+    }
+    const dashboardRoot = document.getElementById("gpuDashboards");
+    if (!gpus.length && !dashboardRoot.querySelector(".empty-state")) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "未检测到 GPU 采样数据。";
+        dashboardRoot.appendChild(empty);
+    }
+
+    document.getElementById("gpuSummary").textContent = gpus.length
+        ? `${gpus.length} 张（${gpus.map(gpu => `GPU ${gpu.index}`).join("、")}）`
+        : "未检测到";
+    const drivers = [...new Set(gpus.map(gpu => gpu.driver))];
+    document.getElementById("driverInfo").textContent = drivers.length
+        ? drivers.map(driver => `NVIDIA ${driver}`).join("、")
+        : "未检测到";
+}
+
+function setRunning(run) {
+    document.getElementById("statusPill").className =
+        "status-pill " + (run ? "status-run" : "status-idle");
+    document.getElementById("statusText").textContent = run ? "运行中" : "空闲";
+    document.getElementById("btnStart").disabled = run;
+    document.getElementById("btnStop").disabled = !run;
+    document.querySelectorAll("#gpuSelector input").forEach(input => { input.disabled = run; });
+}
+
+async function startBurn() {
+    const gpuIndices = [...document.querySelectorAll("#gpuSelector input:checked")]
+        .map(input => +input.value);
+    if (!gpuIndices.length) {
+        alert("请至少选择一张 GPU。");
+        return;
+    }
+    try {
+        const response = await fetch("/api/start", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                seconds: +document.getElementById("seconds").value,
+                intensity: +document.getElementById("intensity").value,
+                gpu_indices: gpuIndices
+            })
+        });
+        const data = await response.json();
+        if (!data.ok) {
+            alert(data.msg || data.error || "启动失败");
+            return;
+        }
+        processError = null;
+        setRunning(true);
+    } catch (error) {
+        alert("启动请求失败：" + error.message);
+    }
+}
+
+async function stopBurn() {
+    try {
+        const response = await fetch("/api/stop", {method: "POST"});
+        const data = await response.json();
+        if (!data.ok && data.msg !== "未在运行") {
+            alert(data.msg || "停止失败");
+        }
+        setRunning(false);
+    } catch (error) {
+        alert("停止请求失败：" + error.message);
+    }
+}
+
+document.getElementById("btnStart").onclick = startBurn;
+document.getElementById("btnStop").onclick = stopBurn;
+
+// SSE 每秒接收一个包含所有 GPU 的快照。
+const es = new EventSource("/stream");
+es.onmessage = event => {
+    const payload = JSON.parse(event.data);
+    pushBatch(payload.samples);
+};
+es.onerror = () => { /* 浏览器会自动重连 */ };
+
+async function refreshStatus() {
+    try {
+        const response = await fetch("/api/status");
+        const data = await response.json();
+        document.getElementById("binReady").textContent =
+            data.binary_ready ? "已编译 ✓" : "未编译 ✗";
+        document.getElementById("binReady").style.color =
+            data.binary_ready ? "var(--ok)" : "var(--danger)";
+        renderInventory(data.gpus || [], data.running, data.active_gpu_indices || []);
+        setRunning(data.running);
+        processError = data.last_error || null;
+        if (!historyLoaded && Array.isArray(data.samples)) {
+            data.samples.forEach(pushBatch);
+            historyLoaded = true;
+        }
+        updateWarning();
+    } catch (error) {
+        // 短暂断线时保留当前界面，下次轮询自动恢复。
+    }
+}
+
+refreshStatus();
+// 同步定时结束、异常退出和外部客户端发起的状态变化。
+setInterval(refreshStatus, 2000);
+</script>
+</body>
+</html>
