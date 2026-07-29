@@ -26,14 +26,13 @@
 - NVIDIA 驱动：595.71.05
 - CUDA Driver API：13.2
 - CUDA Toolkit / `nvcc`：13.0
-- Conda：`/home/yuchen/SATA-YMK/miniconda3`
 
 脚本仍会优先从 `PATH` 自动查找 `conda` 和 `nvcc`，上述路径仅作为当前机器的回退路径。
 
 ## 快速启动（推荐）
 
 ```bash
-cd "/home/yuchen/scripts/GPU-Press"
+cd GPU-Press
 chmod +x "build.sh" "start.sh"
 ./start.sh
 ```
@@ -67,7 +66,7 @@ http://127.0.0.1:8765
 ### 1. 创建 Conda 环境
 
 ```bash
-"/home/yuchen/SATA-YMK/miniconda3/bin/conda" create -y -n gpu-press python=3.10 flask
+conda create -y -n gpu-press python=3.10 flask
 ```
 
 也可使用已有 Conda 环境：
@@ -80,15 +79,9 @@ pip install -r "requirements.txt"
 ### 2. 编译 CUDA 压测程序
 
 ```bash
-cd "/home/yuchen/scripts/GPU-Press"
+cd GPU-Press
 chmod +x "build.sh"
 ./build.sh
-```
-
-若 `nvcc` 不在 `PATH`，可显式指定：
-
-```bash
-NVCC="/home/yuchen/SATA-KING/cuda-13.0/bin/nvcc" ./build.sh
 ```
 
 `build.sh` 使用 `-arch=native`，自动针对当前 GPU 的 Compute Capability 编译。更换不同架构的显卡后必须重新编译；`start.sh` 会在每次启动时自动执行这一步，避免复用旧显卡的 CUDA 内核镜像。
@@ -96,8 +89,7 @@ NVCC="/home/yuchen/SATA-KING/cuda-13.0/bin/nvcc" ./build.sh
 ### 3. 启动后端
 
 ```bash
-"/home/yuchen/SATA-YMK/miniconda3/bin/conda" run --no-capture-output \
-  -n gpu-press python "/home/yuchen/scripts/GPU-Press/gpu_press.py"
+python /home/yuchen/scripts/GPU-Press/gpu_press.py
 ```
 
 默认只监听本机回环地址 `127.0.0.1:8765`。修改端口：
